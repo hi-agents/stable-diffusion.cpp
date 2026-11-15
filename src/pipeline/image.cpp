@@ -300,6 +300,27 @@ namespace sd::pipeline {
                 LOG_ERROR("failed to encode init image");
                 return std::nullopt;
             }
+            // Qwen-Image-Layered works on a [W, H, T, C, B] latent with
+            // T = qwen_image_layers + 1, while the VAE encoder returns a single
+            // frame as [W, H, C, B]. Promote it to 5-D and replicate along T,
+            // otherwise the decode stage aborts with
+            // "qwen image layered expected at least N latent layers".
+            if (sd->version == VERSION_QWEN_IMAGE_LAYERED && request->qwen_image_layers > 0) {
+                const int n_layers = request->qwen_image_layers + 1;
+                if (init_latent.dim() == 4) {
+                    init_latent.reshape_({init_latent.shape()[0], init_latent.shape()[1], 1,
+                                          init_latent.shape()[2], init_latent.shape()[3]});
+                }
+                if (init_latent.dim() == 5 && init_latent.shape()[2] == 1) {
+                    std::vector<int64_t> shape(init_latent.shape().begin(), init_latent.shape().end());
+                    shape[2]            = n_layers;
+                    sd::Tensor<float> replicated(shape);
+                    for (int layer = 0; layer < n_layers; ++layer) {
+                        sd::ops::slice_assign(&replicated, 2, layer, layer + 1, init_latent);
+                    }
+                    init_latent = std::move(replicated);
+                }
+            }
         }
 
         if (sd->animatediff_num_frames > 1 &&
