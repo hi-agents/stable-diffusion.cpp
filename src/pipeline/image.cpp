@@ -718,7 +718,10 @@ namespace sd::pipeline {
                 break;
             }
             int64_t t1 = ggml_time_ms();
-            if (sd->version == VERSION_QWEN_IMAGE_LAYERED) {
+            // qwen_image_layers == 0 表示关闭分层，走普通单图 decode；
+            // 若不加这个判断，layers=0 时 latent 没有 T 维，会在这里误报
+            // "expected at least 1 latent layers, got shape dim=4"。
+            if (sd->version == VERSION_QWEN_IMAGE_LAYERED && request.qwen_image_layers > 0) {
                 int qwen_image_latent_layers = request.qwen_image_layers + 1;
                 if (final_latents[i].dim() < 5 || final_latents[i].shape()[2] < qwen_image_latent_layers) {
                     LOG_ERROR("qwen image layered expected at least %d latent layers, got shape dim=%d",
